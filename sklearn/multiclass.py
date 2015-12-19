@@ -74,6 +74,26 @@ def _fit_binary(estimator, X, y, classes=None):
     return estimator
 
 
+def _partial_fit_binary(estimator, X, y, classes=None):
+    """Partially fit a single binary estimator."""
+    if not hasattr(estimator, "partial_fit"):
+        raise ValueError("Base estimator must implement "
+                         "partial_fit method")
+    unique_y = np.unique(y)
+    if len(unique_y) == 1:
+        if classes is not None:
+            if y[0] == -1:
+                c = 0
+            else:
+                c = y[0]
+            warnings.warn("Label %s is present in all training examples." %
+                          str(classes[c]))
+        estimator = _ConstantPredictor().fit(X, unique_y)
+    else:
+        estimator.partial_fit(X, y, np.array((0, 1)))
+    return estimator
+
+
 def _predict_binary(estimator, X):
     """Make predictions using a single binary estimator."""
     if is_regressor(estimator):
@@ -167,6 +187,7 @@ class OneVsRestClassifier(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
     def __init__(self, estimator, n_jobs=1):
         self.estimator = estimator
         self.n_jobs = n_jobs
+        self.first_partial_run = True
 
     def fit(self, X, y):
         """Fit underlying estimators.
@@ -201,6 +222,45 @@ class OneVsRestClassifier(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
                 self.label_binarizer_.classes_[i]])
             for i, column in enumerate(columns))
 
+        return self
+
+    def partial_fit(self, X, y, classes=None):
+        """Fit underlying estimators.
+
+        Parameters
+        ----------
+        X : (sparse) array-like, shape = [n_samples, n_features]
+            Data.
+
+        y : (sparse) array-like, shape = [n_samples] or [n_samples, n_classes]
+            Multi-class targets. An indicator matrix turns on multilabel
+            classification.
+
+        Returns
+        -------
+        self
+        """
+        if self.first_partial_run:
+            if classes is None:
+                raise ValueError("array of all classes of target varialble \
+                                  must be provided")
+            self.dict_estimators = {classes[i] : clone(self.estimator) for i in 
+                               xrange(len(np.unique(classes)))}
+            self.first_partial_run = False
+        
+        now_classes = np.unique(y)
+        self.label_binarizer_ = LabelBinarizer(sparse_output=True)
+        Y = self.label_binarizer_.fit_transform(y)
+        Y = Y.tocsc()
+        columns = (col.toarray().ravel() for col in Y.T)
+
+        Parallel(n_jobs=self.n_jobs)(delayed( _partial_fit_binary)
+            (self.dict_estimators[now_classes[i]],X, column, classes=[
+                "not %s" % self.label_binarizer_.classes_[i],
+                 self.label_binarizer_.classes_[i]])
+            for i, column in enumerate(columns))
+       
+        self.estimators_ = [est for est in self.dict_estimators.values()]
         return self
 
     def predict(self, X):
@@ -340,6 +400,16 @@ def _fit_ovo_binary(estimator, X, y, i, j):
     y_binary[y == j] = 1
     ind = np.arange(X.shape[0])
     return _fit_binary(estimator, X[ind[cond]], y_binary, classes=[i, j])
+
+def _partial_fit_ovo_binary(estimator, X, y, i, j):
+    """Partially fit a single binary estimator (one-vs-one)."""
+    cond = np.logical_or(y == i, y == j)
+    y = y[cond]
+    y_binary = np.empty(y.shape, np.int)
+    y_binary[y == i] = 0
+    y_binary[y == j] = 1
+    ind = np.arange(X.shape[0])
+    return partial_fit_binary(estimator, X[ind[cond]], y_binary, classes=[i, j])
 
 
 class OneVsOneClassifier(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
