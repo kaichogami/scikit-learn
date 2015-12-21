@@ -254,7 +254,8 @@ class OneVsRestClassifier(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
             np.zeros((1, len(X)), dtype=np.int), 
             classes=["not %s" % self._classes[i],
                  self._classes[i]])
-            for i, cl in izip(xrange(self._n_classes), self._classes))
+            for i, cl in izip(xrange(self._n_classes), 
+                              self.label_binarizer_.classes_))
 
         return self
 

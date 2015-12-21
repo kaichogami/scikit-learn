@@ -81,12 +81,13 @@ def test_ovr_partial_fit():
     ovr = OneVsRestClassifier(SGDClassifier(random_state=0))
     ovr.partial_fit(X[:100], y[:100], np.unique(y))
     ovr.partial_fit(X[100:], y[100:])
-
+    pred = ovr.predict(X)
     assert_equal(len(ovr.estimators_), len(np.unique(y)))
 
-    pred = ovr.predict(X)
-    ovr2 = OneVsRestClassifier(SGDClassifier(random_state=0))
-    pred2 = ovr2.fit(X, y).predict(X)
+    sgd = OneVsRestClassifier(SGDClassifier(random_state=0))
+    sgd.partial_fit(X[:100], y[:100], np.unique(y))
+    sgd.partial_fit(X[100:], y[100:])
+    pred2 = sgd.predict(X)
     assert_equal(np.mean(pred), np.mean(pred2))
 
 
