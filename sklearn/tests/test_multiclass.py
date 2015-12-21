@@ -13,7 +13,8 @@ from sklearn.utils.testing import assert_raise_message
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.multiclass import OneVsOneClassifier
 from sklearn.multiclass import OutputCodeClassifier
-from sklearn.utils.multiclass import check_classification_targets, type_of_target
+from sklearn.utils.multiclass import (check_classification_targets, type_of_target)
+from sklearn.utils import shuffle
 
 from sklearn.metrics import precision_score
 from sklearn.metrics import recall_score
@@ -21,7 +22,8 @@ from sklearn.metrics import recall_score
 from sklearn.svm import LinearSVC, SVC
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import (LinearRegression, Lasso, ElasticNet, Ridge,
-                                  Perceptron, LogisticRegression)
+                                  Perceptron, LogisticRegression, 
+                                  SGDClassifier)
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
@@ -71,6 +73,21 @@ def test_ovr_fit_predict():
     ovr = OneVsRestClassifier(MultinomialNB())
     pred = ovr.fit(iris.data, iris.target).predict(iris.data)
     assert_greater(np.mean(iris.target == pred), 0.65)
+
+
+def test_ovr_partial_fit():
+    # Test if partial_fit is working as intented
+    X, y = shuffle(iris.data, iris.target, random_state=0)
+    ovr = OneVsRestClassifier(SGDClassifier(random_state=0))
+    ovr.partial_fit(X[:100], y[:100], np.unique(y))
+    ovr.partial_fit(X[100:], y[100:])
+
+    assert_equal(len(ovr.estimators_), len(np.unique(y)))
+
+    pred = ovr.predict(X)
+    ovr2 = OneVsRestClassifier(SGDClassifier(random_state=0))
+    pred2 = ovr2.fit(X, y).predict(X)
+    assert_equal(np.mean(pred), np.mean(pred2))
 
 
 def test_ovr_ovo_regressor():

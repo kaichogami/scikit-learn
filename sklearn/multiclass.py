@@ -37,6 +37,7 @@ import array
 import numpy as np
 import warnings
 import scipy.sparse as sp
+from itertools import izip
 
 from .base import BaseEstimator, ClassifierMixin, clone, is_classifier
 from .base import MetaEstimatorMixin, is_regressor
@@ -79,18 +80,8 @@ def _partial_fit_binary(estimator, X, y, classes=None):
     if not hasattr(estimator, "partial_fit"):
         raise ValueError("Base estimator must implement "
                          "partial_fit method")
-    unique_y = np.unique(y)
-    if len(unique_y) == 1:
-        if classes is not None:
-            if y[0] == -1:
-                c = 0
-            else:
-                c = y[0]
-            warnings.warn("Label %s is present in all training examples." %
-                          str(classes[c]))
-        estimator = _ConstantPredictor().fit(X, unique_y)
-    else:
-        estimator.partial_fit(X, y, np.array((0, 1)))
+
+    estimator.partial_fit(X, y, np.array((0, 1)))
     return estimator
 
 
@@ -225,7 +216,7 @@ class OneVsRestClassifier(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
         return self
 
     def partial_fit(self, X, y, classes=None):
-        """Fit underlying estimators.
+        """Partially fit underlying estimators.
 
         Parameters
         ----------
@@ -244,23 +235,27 @@ class OneVsRestClassifier(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
             if classes is None:
                 raise ValueError("array of all classes of target varialble \
                                   must be provided")
-            self.dict_estimators = {classes[i] : clone(self.estimator) for i in 
-                               xrange(len(np.unique(classes)))}
+            self._classes = np.unique(classes)
+            self._n_classes = len(self._classes)
             self.first_partial_run = False
-        
-        now_classes = np.unique(y)
+            self.estimators_ = [clone(self.estimator) for _ in xrange(
+                               self._n_classes)]
+
         self.label_binarizer_ = LabelBinarizer(sparse_output=True)
         Y = self.label_binarizer_.fit_transform(y)
         Y = Y.tocsc()
         columns = (col.toarray().ravel() for col in Y.T)
 
-        Parallel(n_jobs=self.n_jobs)(delayed( _partial_fit_binary)
-            (self.dict_estimators[now_classes[i]],X, column, classes=[
-                "not %s" % self.label_binarizer_.classes_[i],
-                 self.label_binarizer_.classes_[i]])
-            for i, column in enumerate(columns))
-       
-        self.estimators_ = [est for est in self.dict_estimators.values()]
+        #if some class is missing in a particular data set, make sure to put all
+        #zeros as target variable for the estimator
+        self.estimators_ = Parallel(n_jobs=self.n_jobs)(delayed(
+            _partial_fit_binary)(self.estimators_[i], 
+            X, columns.next() if cl == self._classes[i] else
+            np.zeros((1, len(X)), dtype=np.int), 
+            classes=["not %s" % self._classes[i],
+                 self._classes[i]])
+            for i, cl in izip(xrange(self._n_classes), self._classes))
+
         return self
 
     def predict(self, X):
