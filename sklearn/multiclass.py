@@ -105,6 +105,12 @@ def _check_estimator(estimator):
                          "decision_function or predict_proba!")
 
 
+def _fill_missing_classes(current_classes, base_classes):
+    for i in xrange(len(base_classes)):
+        if base_classes[i] != current_classes[i]:
+            current_classes = np.insert(current_classes, i, 987654321)
+    return current_classes
+
 class _ConstantPredictor(BaseEstimator):
 
     def fit(self, X, y):
@@ -202,6 +208,7 @@ class OneVsRestClassifier(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
         # overall.
         self.label_binarizer_ = LabelBinarizer(sparse_output=True)
         Y = self.label_binarizer_.fit_transform(y)
+        self.classes_ = self.label_binarizer.classes_
         Y = Y.tocsc()
         columns = (col.toarray().ravel() for col in Y.T)
         # In cases where individual estimators are very fast to train setting
@@ -209,8 +216,7 @@ class OneVsRestClassifier(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
         # of spawning threads.  See joblib issue #112.
         self.estimators_ = Parallel(n_jobs=self.n_jobs)(delayed(_fit_binary)(
             self.estimator, X, column, classes=[
-                "not %s" % self.label_binarizer_.classes_[i],
-                self.label_binarizer_.classes_[i]])
+                "not %s" % self.classes_[i], self.classes_[i]])
             for i, column in enumerate(columns))
 
         return self
@@ -235,27 +241,28 @@ class OneVsRestClassifier(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
             if classes is None:
                 raise ValueError("array of all classes of target varialble \
                                   must be provided")
-            self._classes = np.unique(classes)
-            self._n_classes = len(self._classes)
+            self.classes_ = np.unique(classes)
             self.first_partial_run = False
             self.estimators_ = [clone(self.estimator) for _ in xrange(
-                               self._n_classes)]
+                               len(self.classes_))]
 
         self.label_binarizer_ = LabelBinarizer(sparse_output=True)
         Y = self.label_binarizer_.fit_transform(y)
         Y = Y.tocsc()
         columns = (col.toarray().ravel() for col in Y.T)
+        new_classes = self.label_binarizer_.classes_
+        new_classes = _fill_missing_classes(new_classes, self.classes_)
+        print(new_classes, self.classes_)
 
         #if some class is missing in a particular data set, make sure to put all
         #zeros as target variable for the estimator
         self.estimators_ = Parallel(n_jobs=self.n_jobs)(delayed(
             _partial_fit_binary)(self.estimators_[i], 
-            X, columns.next() if cl == self._classes[i] else
+            X, columns.next() if new_classes[i] == self.classes_[i] else
             np.zeros((1, len(X)), dtype=np.int), 
-            classes=["not %s" % self._classes[i],
-                 self._classes[i]])
-            for i, cl in izip(xrange(self._n_classes), 
-                              self.label_binarizer_.classes_))
+            classes=["not %s" % self.classes_[i],
+                 self.classes_[i]])
+            for i in xrange(len(self.classes_)))
 
         return self
 
@@ -288,7 +295,7 @@ class OneVsRestClassifier(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
                 pred = _predict_binary(e, X)
                 np.maximum(maxima, pred, out=maxima)
                 argmaxima[maxima == pred] = i
-            return self.label_binarizer_.classes_[np.array(argmaxima.T)]
+            return self.classes_[np.array(argmaxima.T)]
         else:
             indices = array.array('i')
             indptr = array.array('i', [0])
@@ -362,10 +369,6 @@ class OneVsRestClassifier(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
     def multilabel_(self):
         """Whether this is a multilabel classifier"""
         return self.label_binarizer_.y_type_.startswith('multilabel')
-
-    @property
-    def classes_(self):
-        return self.label_binarizer_.classes_
 
     @property
     def coef_(self):

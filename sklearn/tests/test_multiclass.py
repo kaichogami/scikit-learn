@@ -77,6 +77,7 @@ def test_ovr_fit_predict():
 
 def test_ovr_partial_fit():
     # Test if partial_fit is working as intented
+    iris = datasets.load_iris()
     X, y = shuffle(iris.data, iris.target, random_state=0)
     ovr = OneVsRestClassifier(SGDClassifier(random_state=0))
     ovr.partial_fit(X[:100], y[:100], np.unique(y))
@@ -88,6 +89,20 @@ def test_ovr_partial_fit():
     sgd.partial_fit(X[:100], y[:100], np.unique(y))
     sgd.partial_fit(X[100:], y[100:])
     pred2 = sgd.predict(X)
+    assert_equal(np.mean(pred), np.mean(pred2))
+
+    #Test with missing classes
+    ovr1 = OneVsRestClassifier(SGDClassifier(random_state=0))
+    ovr.partial_fit(iris.data[:60], iris.target[:60], np.unique(iris.target))
+    ovr.partial_fit(iris.data[60:120], iris.target[60:120])
+    pred = ovr.predict(iris.data[120:])
+    assert_equal(len(ovr.estimators_), len(np.unique(iris.target)))
+
+    sgd = OneVsRestClassifier(SGDClassifier(random_state=0))
+    sgd.partial_fit(iris.data[:60], iris.target[:60], np.unique(iris.target))
+    sgd.partial_fit(iris.data[60:120], iris.target[60:120])
+    pred2 = sgd.predict(iris.data[120:])
+    print(np.mean(pred), iris.target)
     assert_equal(np.mean(pred), np.mean(pred2))
 
 
