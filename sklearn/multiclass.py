@@ -412,6 +412,7 @@ def _partial_fit_ovo_binary(estimator, X, y, i, j):
         y_binary = np.zeros_like(y)
         y_binary[y == j] = 1
         return _partial_fit_binary(estimator, X[cond], y_binary)
+
     return estimator
 
 class OneVsOneClassifier(BaseEstimator, ClassifierMixin, MetaEstimatorMixin):
